@@ -7,7 +7,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+    export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
   const { data: call } = await supabase
@@ -24,8 +24,12 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     description: isLive
       ? `${hostName || 'A host'} is speaking — tap to join`
       : 'Tap to join when the call begins',
+    openGraph: {
+      images: ['/og-image.png'],
+    },
   }
 }
+
 
 export default async function JoinPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
