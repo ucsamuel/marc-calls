@@ -15,6 +15,7 @@ type ParticipantInfo = {
 }
 
 export default function CallRoom() {
+  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const roomName = searchParams.get('room')
@@ -151,6 +152,10 @@ export default function CallRoom() {
       call.on('network-quality-change', (ev: any) => {
         const localId = call.participants().local?.session_id
         const quality = ev.threshold === 'good' ? null : ev.threshold
+
+        call.on('active-speaker-change', (ev: any) => {
+       setActiveSpeaker(ev.activeSpeaker?.peerId || null)
+       })
 
         call.sendAppMessage({ type: 'network-status', sessionId: localId, quality }, '*')
 
@@ -394,8 +399,13 @@ export default function CallRoom() {
           <p className="text-white/60 text-sm text-center mt-10">Connecting...</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 mb-4">
-            {speakers.map((p) => (
-              <div key={p.session_id} className="bg-white/10 rounded-xl aspect-square flex flex-col items-center justify-center relative">
+              {speakers.map((p) => (
+  <div
+    key={p.session_id}
+    className={`bg-white/10 rounded-xl aspect-square flex flex-col items-center justify-center relative transition-all ${
+      activeSpeaker === p.session_id ? 'ring-2 ring-[#C9A227]' : ''
+    }`}
+  >
                 {p.photoUrl ? (
                   <img src={p.photoUrl} alt={p.user_name} className="w-14 h-14 rounded-full object-cover" />
                 ) : (
