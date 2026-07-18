@@ -237,6 +237,7 @@ export default function CallRoom() {
       const call = callRef.current
       if (!call) return
       const all = Object.values(call.participants())
+      console.log('Current participants:', all)
       const list: ParticipantInfo[] = all.map((p: DailyParticipant) => ({
         session_id: p.session_id,
         user_name: p.user_name || 'Guest',
