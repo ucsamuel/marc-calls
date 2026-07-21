@@ -119,7 +119,7 @@ export default function SignUpForm() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full h-12 px-4 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C9A227] text-[#0B1F3A] dark:text-white"
-              placeholder="Pastor Samuel Owusu"
+              placeholder="Enter your full Name"
             />
           </div>
 
@@ -131,7 +131,7 @@ export default function SignUpForm() {
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="w-full h-12 px-4 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C9A227] text-[#0B1F3A] dark:text-white"
-              placeholder="0244 123 456"
+              placeholder="Enter your phone Number"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Used to identify you in the app — you'll log in with your email.</p>
           </div>

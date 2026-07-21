@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import DailyIframe, { DailyCall, DailyParticipant } from '@daily-co/daily-js'
 import { supabase } from '@/lib/supabase'
-import { Mic, MicOff, Hand, Users, PhoneOff, Crown, Share2 } from 'lucide-react'
+import { Mic, MicOff, Hand, Users, PhoneOff, Crown, Share2, UserMinus } from 'lucide-react'
 import EmojiReactions from './EmojiReactions'
 
 type ParticipantInfo = {
@@ -15,7 +15,6 @@ type ParticipantInfo = {
 }
 
 export default function CallRoom() {
-  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
   const router = useRouter()
   const searchParams = useSearchParams()
   const roomName = searchParams.get('room')
@@ -24,6 +23,8 @@ export default function CallRoom() {
   const callRef = useRef<DailyCall | null>(null)
   const adminPhotosRef = useRef<Record<string, string>>({})
   const speakerIdsRef = useRef<Set<string>>(new Set())
+  const audioElementsRef = useRef<Record<string, HTMLAudioElement>>({})
+  const wakeLockRef = useRef<any>(null)
 
   const [callId, setCallId] = useState('')
   const [joined, setJoined] = useState(false)
@@ -38,11 +39,14 @@ export default function CallRoom() {
   const [speakerIds, setSpeakerIds] = useState<Set<string>>(new Set())
   const [raisedHands, setRaisedHands] = useState<string[]>([])
   const [networkIssues, setNetworkIssues] = useState<Record<string, 'low' | 'very-low'>>({})
+  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
+  const [muteAllActive, setMuteAllActive] = useState(false)
   const [showManage, setShowManage] = useState(false)
   const [showListeners, setShowListeners] = useState(false)
   const [kicked, setKicked] = useState(false)
   const [blockedEntry, setBlockedEntry] = useState(false)
   const [disconnected, setDisconnected] = useState(false)
+  const [callEnded, setCallEnded] = useState(false)
 
   useEffect(() => {
     speakerIdsRef.current = speakerIds
@@ -60,8 +64,16 @@ export default function CallRoom() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
       osc.start()
       osc.stop(ctx.currentTime + 0.4)
+    } catch (e) {}
+  }
+
+  const requestWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen')
+      }
     } catch (e) {
-      // silently ignore if audio context unavailable
+      // wake lock not available or denied — not critical, call still works
     }
   }
 
@@ -69,6 +81,7 @@ export default function CallRoom() {
     if (callRef.current) return
 
     let hasJoinedOnce = false
+    let callEndedLocal = false
 
     const setup = async () => {
       const kickedKey = `kicked_${roomName}`
@@ -127,6 +140,39 @@ export default function CallRoom() {
         hasJoinedOnce = true
         setJoined(true)
         call.setLocalAudio(false)
+        requestWakeLock()
+      })
+
+      // THE FIX: Daily's raw call object does not auto-play remote audio.
+      // We must manually attach each incoming audio track to a real <audio> element.
+      call.on('track-started', (ev: any) => {
+        if (ev.track.kind !== 'audio' || ev.participant?.local) return
+
+        const sessionId = ev.participant.session_id
+        let audioEl = audioElementsRef.current[sessionId]
+
+        if (!audioEl) {
+          audioEl = document.createElement('audio')
+          audioEl.autoplay = true
+          audioEl.setAttribute('playsinline', 'true')
+          document.body.appendChild(audioEl)
+          audioElementsRef.current[sessionId] = audioEl
+        }
+
+        const stream = new MediaStream([ev.track])
+        audioEl.srcObject = stream
+        audioEl.play().catch(() => {
+          // Autoplay can be blocked until a user gesture; join button tap should satisfy this
+        })
+      })
+
+      call.on('track-stopped', (ev: any) => {
+        if (ev.track.kind !== 'audio' || !ev.participant) return
+        const sessionId = ev.participant.session_id
+        const audioEl = audioElementsRef.current[sessionId]
+        if (audioEl) {
+          audioEl.srcObject = null
+        }
       })
 
       call.on('participant-joined', () => {
@@ -139,23 +185,31 @@ export default function CallRoom() {
       })
 
       call.on('participant-updated', updateParticipants)
-      call.on('participant-left', updateParticipants)
+
+      call.on('participant-left', (ev: any) => {
+        updateParticipants()
+        const sessionId = ev.participant?.session_id
+        if (sessionId && audioElementsRef.current[sessionId]) {
+          audioElementsRef.current[sessionId].remove()
+          delete audioElementsRef.current[sessionId]
+        }
+      })
 
       call.on('left-meeting', () => {
-        if (hasJoinedOnce) setDisconnected(true)
+        if (hasJoinedOnce && !callEndedLocal) setDisconnected(true)
       })
 
       call.on('error', () => {
-        if (hasJoinedOnce) setDisconnected(true)
+        if (hasJoinedOnce && !callEndedLocal) setDisconnected(true)
+      })
+
+      call.on('active-speaker-change', (ev: any) => {
+        setActiveSpeaker(ev.activeSpeaker?.peerId || null)
       })
 
       call.on('network-quality-change', (ev: any) => {
         const localId = call.participants().local?.session_id
         const quality = ev.threshold === 'good' ? null : ev.threshold
-
-        call.on('active-speaker-change', (ev: any) => {
-       setActiveSpeaker(ev.activeSpeaker?.peerId || null)
-       })
 
         call.sendAppMessage({ type: 'network-status', sessionId: localId, quality }, '*')
 
@@ -178,6 +232,10 @@ export default function CallRoom() {
           setKicked(true)
           call.leave()
         }
+        if (ev.data?.type === 'call-ended') {
+          callEndedLocal = true
+          setCallEnded(true)
+        }
         if (ev.data?.type === 'raise-hand') {
           setRaisedHands((prev) =>
             ev.data.raised
@@ -187,6 +245,9 @@ export default function CallRoom() {
         }
         if (ev.data?.type === 'promote-cohost' && ev.data.targetId === localId) {
           setIsCoHost(true)
+        }
+        if (ev.data?.type === 'demote-cohost' && ev.data.targetId === localId) {
+          setIsCoHost(false)
         }
         if (ev.data?.type === 'force-mute' && ev.data.targetId === localId) {
           const wasMuted = hardMuted
@@ -237,7 +298,6 @@ export default function CallRoom() {
       const call = callRef.current
       if (!call) return
       const all = Object.values(call.participants())
-      console.log('Current participants:', all)
       const list: ParticipantInfo[] = all.map((p: DailyParticipant) => ({
         session_id: p.session_id,
         user_name: p.user_name || 'Guest',
@@ -254,6 +314,9 @@ export default function CallRoom() {
     setup()
 
     return () => {
+      Object.values(audioElementsRef.current).forEach((el) => el.remove())
+      audioElementsRef.current = {}
+      wakeLockRef.current?.release?.()
       callRef.current?.leave()
       callRef.current?.destroy()
       callRef.current = null
@@ -296,14 +359,18 @@ export default function CallRoom() {
     callRef.current?.sendAppMessage({ type: 'force-mute', targetId: sessionId, mute: currentlyOn }, '*')
   }
 
-  const handleMuteAll = () => {
+  const handleToggleMuteAll = () => {
     const call = callRef.current
     if (!call) return
+    const shouldMute = !muteAllActive
+
     Object.values(call.participants()).forEach((p: any) => {
       if (!p.local) {
-        call.sendAppMessage({ type: 'force-mute', targetId: p.session_id, mute: true }, '*')
+        call.sendAppMessage({ type: 'force-mute', targetId: p.session_id, mute: shouldMute }, '*')
       }
     })
+
+    setMuteAllActive(shouldMute)
   }
 
   const handleKick = (sessionId: string) => {
@@ -313,13 +380,28 @@ export default function CallRoom() {
     setTimeout(() => call.updateParticipant(sessionId, { eject: true }), 300)
   }
 
-  const handlePromoteCoHost = (sessionId: string) => {
-    callRef.current?.sendAppMessage({ type: 'promote-cohost', targetId: sessionId }, '*')
-    callRef.current?.sendAppMessage({ type: 'speaker-status', sessionId, isSpeaker: true }, '*')
-    setSpeakerIds((prev) => new Set(prev).add(sessionId))
+  const handleToggleCoHost = (sessionId: string, currentlyPromoted: boolean) => {
+    const call = callRef.current
+    if (!call) return
+
+    if (currentlyPromoted) {
+      call.sendAppMessage({ type: 'demote-cohost', targetId: sessionId }, '*')
+      call.sendAppMessage({ type: 'speaker-status', sessionId, isSpeaker: false }, '*')
+      setSpeakerIds((prev) => {
+        const next = new Set(prev)
+        next.delete(sessionId)
+        return next
+      })
+    } else {
+      call.sendAppMessage({ type: 'promote-cohost', targetId: sessionId }, '*')
+      call.sendAppMessage({ type: 'speaker-status', sessionId, isSpeaker: true }, '*')
+      setSpeakerIds((prev) => new Set(prev).add(sessionId))
+    }
   }
 
   const handleEndCall = async () => {
+    callRef.current?.sendAppMessage({ type: 'call-ended' }, '*')
+
     const { data: callData } = await supabase
       .from('calls')
       .select('id')
@@ -333,12 +415,15 @@ export default function CallRoom() {
         .eq('id', callData.id)
     }
 
+    await new Promise((resolve) => setTimeout(resolve, 500))
+
     await fetch('/api/delete-room', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomName }),
     })
 
+    setCallEnded(true)
     callRef.current?.leave()
     router.push('/home')
   }
@@ -364,6 +449,14 @@ export default function CallRoom() {
     return (
       <div className="min-h-screen bg-[#0B1F3A] flex items-center justify-center px-6 text-center">
         <p className="text-white text-sm">You've been removed from this call by an admin.</p>
+      </div>
+    )
+  }
+
+  if (callEnded) {
+    return (
+      <div className="min-h-screen bg-[#0B1F3A] flex items-center justify-center px-6 text-center">
+        <p className="text-white text-sm">The call has ended.</p>
       </div>
     )
   }
@@ -400,13 +493,13 @@ export default function CallRoom() {
           <p className="text-white/60 text-sm text-center mt-10">Connecting...</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 mb-4">
-              {speakers.map((p) => (
-  <div
-    key={p.session_id}
-    className={`bg-white/10 rounded-xl aspect-square flex flex-col items-center justify-center relative transition-all ${
-      activeSpeaker === p.session_id ? 'ring-2 ring-[#C9A227]' : ''
-    }`}
-  >
+            {speakers.map((p) => (
+              <div
+                key={p.session_id}
+                className={`bg-white/10 rounded-xl aspect-square flex flex-col items-center justify-center relative transition-all ${
+                  activeSpeaker === p.session_id ? 'ring-2 ring-[#C9A227]' : ''
+                }`}
+              >
                 {p.photoUrl ? (
                   <img src={p.photoUrl} alt={p.user_name} className="w-14 h-14 rounded-full object-cover" />
                 ) : (
@@ -438,32 +531,35 @@ export default function CallRoom() {
         <div className="fixed inset-0 bg-black/60 flex items-end z-50">
           <div className="w-full bg-white dark:bg-gray-800 rounded-t-2xl p-5 max-h-[70vh] overflow-y-auto">
             <h2 className="font-serif text-lg text-[#0B1F3A] dark:text-white mb-4">Manage participants</h2>
-            {participants.map((p) => (
-              <div key={p.session_id} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-[#0B1F3A] dark:text-white">{p.user_name}</span>
-                  {raisedHands.includes(p.session_id) && <Hand size={14} className="text-[#C9A227]" />}
-                  {networkIssues[p.session_id] && (
-                    <span className="text-[10px] text-yellow-500">
-                      {networkIssues[p.session_id] === 'very-low' ? 'Poor' : 'Weak'}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => handleMuteParticipant(p.session_id, p.audio)}>
-                    {p.audio ? <Mic size={16} className="text-[#0B1F3A] dark:text-white" /> : <MicOff size={16} className="text-red-500" />}
-                  </button>
-                  {isHost && (
-                    <button onClick={() => handlePromoteCoHost(p.session_id)}>
-                      <Crown size={16} className="text-[#C9A227]" />
+            {participants.map((p) => {
+              const isPromoted = speakerIds.has(p.session_id)
+              return (
+                <div key={p.session_id} className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#0B1F3A] dark:text-white">{p.user_name}</span>
+                    {raisedHands.includes(p.session_id) && <Hand size={14} className="text-[#C9A227]" />}
+                    {networkIssues[p.session_id] && (
+                      <span className="text-[10px] text-yellow-500">
+                        {networkIssues[p.session_id] === 'very-low' ? 'Poor' : 'Weak'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-3 items-center">
+                    <button onClick={() => handleMuteParticipant(p.session_id, p.audio)}>
+                      {p.audio ? <Mic size={16} className="text-[#0B1F3A] dark:text-white" /> : <MicOff size={16} className="text-red-500" />}
                     </button>
-                  )}
-                  {canManage && (
+                    <button onClick={() => handleToggleCoHost(p.session_id, isPromoted)}>
+                      {isPromoted ? (
+                        <UserMinus size={16} className="text-red-400" />
+                      ) : (
+                        <Crown size={16} className="text-[#C9A227]" />
+                      )}
+                    </button>
                     <button onClick={() => handleKick(p.session_id)} className="text-xs text-red-500">Remove</button>
-                  )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             <button onClick={() => setShowManage(false)} className="w-full h-12 mt-4 rounded-lg border border-gray-300 dark:border-gray-600 text-[#0B1F3A] dark:text-white font-medium">Close</button>
           </div>
         </div>
@@ -487,7 +583,14 @@ export default function CallRoom() {
                       {networkIssues[p.session_id] === 'very-low' ? 'Poor connection' : 'Weak'}
                     </span>
                   )}
-                  {!p.audio && <MicOff size={14} className="text-gray-400" />}
+                  {p.audio ? (
+                    <Mic
+                      size={14}
+                      className={activeSpeaker === p.session_id ? 'text-[#C9A227]' : 'text-gray-400'}
+                    />
+                  ) : (
+                    <MicOff size={14} className="text-gray-400" />
+                  )}
                 </div>
               ))}
             </div>
@@ -512,9 +615,11 @@ export default function CallRoom() {
           <span className="text-xs text-white/60">Share</span>
         </button>
         {canManage && (
-          <button onClick={handleMuteAll} className="flex flex-col items-center gap-1">
-            <Users size={22} className="text-white/60" />
-            <span className="text-xs text-white/60">Mute all</span>
+          <button onClick={handleToggleMuteAll} className="flex flex-col items-center gap-1">
+            <Users size={22} className={muteAllActive ? 'text-[#C9A227]' : 'text-white/60'} />
+            <span className={`text-xs ${muteAllActive ? 'text-[#C9A227]' : 'text-white/60'}`}>
+              {muteAllActive ? 'Unmute all' : 'Mute all'}
+            </span>
           </button>
         )}
         {canManage && (
@@ -523,9 +628,9 @@ export default function CallRoom() {
             <span className="text-xs text-white/60">Manage</span>
           </button>
         )}
-        <button onClick={isHost ? handleEndCall : handleLeave} className="flex flex-col items-center gap-1">
+        <button onClick={canManage ? handleEndCall : handleLeave} className="flex flex-col items-center gap-1">
           <PhoneOff size={22} className="text-red-400" />
-          <span className="text-xs text-red-400">{isHost ? 'End call' : 'Leave'}</span>
+          <span className="text-xs text-red-400">{canManage ? 'End call' : 'Leave'}</span>
         </button>
       </div>
 
