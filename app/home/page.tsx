@@ -86,11 +86,15 @@ export default function HomePage() {
 
       setUpcomingCalls(upcoming || [])
 
-      const { data: live } = await supabase
-        .from('calls')
-        .select('id, daily_room_name')
-        .eq('status', 'live')
-        .maybeSingle()
+            const { data: live, error: liveError } = await supabase
+  .from('calls')
+  .select('id, daily_room_name')
+  .eq('status', 'live')
+  .order('started_at', { ascending: false })
+  .limit(1)
+  .maybeSingle()
+  
+console.log('Live call check on page load:', live, 'Error:', liveError)
 
       setLiveCall(live)
 
@@ -121,6 +125,8 @@ export default function HomePage() {
       .from('calls')
       .select('id, daily_room_name')
       .eq('status', 'live')
+      .order('started_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
 
     const { data: scheduled } = await supabase
@@ -143,22 +149,33 @@ export default function HomePage() {
     }
   }
 
-  const startNewCall = async () => {
-    const res = await fetch('/api/create-room', { method: 'POST' })
-    const data = await res.json()
+      const startNewCall = async () => {
+  const res = await fetch('/api/create-room', { method: 'POST' })
+  const data = await res.json()
 
-    if (data.url) {
-      const { data: { user } } = await supabase.auth.getUser()
-      await supabase.from('calls').insert({
-        host_id: user?.id,
-        status: 'live',
-        started_at: new Date().toISOString(),
-        daily_room_name: data.name,
-        daily_room_url: data.url,
-      })
-      router.push(`/call?room=${data.name}`)
-    }
+  console.log('Room creation response:', data)
+
+  if (data.url) {
+    console.log('About to get user...')
+    const { data: { user } } = await supabase.auth.getUser()
+    console.log('Got user:', user?.id)
+
+    console.log('About to insert...')
+    const { data: insertedCall, error: insertError } = await supabase.from('calls').insert({
+      host_id: user?.id,
+      status: 'live',
+      started_at: new Date().toISOString(),
+      daily_room_name: data.name,
+      daily_room_url: data.url,
+    }).select()
+
+    console.log('Insert result:', insertedCall, 'Error:', insertError)
+
+    router.push(`/call?room=${data.name}`)
+  } else {
+    console.log('No room URL returned, room creation failed')
   }
+}
 
   const startScheduledCall = async () => {
     const { data: { user } } = await supabase.auth.getUser()
