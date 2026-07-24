@@ -20,10 +20,16 @@ export function useReadReceipts(currentUserId: string, messageIds: string[]) {
     )
     if (alreadyRead) return
 
-    await supabase.from('admin_message_reads').insert({
+    const { error } = await supabase.from('admin_message_reads').insert({
       message_id: messageId,
       admin_id: currentUserId,
     })
+
+    // Ignore duplicate-key errors (23505) since the unique constraint
+    // already protects against double-inserting the same read
+    if (error && (error as any).code !== '23505') {
+      console.error('Failed to mark as read:', error)
+    }
   }
 
   useEffect(() => {
@@ -60,7 +66,12 @@ export function useReadReceipts(currentUserId: string, messageIds: string[]) {
   }, [messageIds.join(',')])
 
   const getSeenBy = (messageId: string) => {
-    return reads.filter((r) => r.message_id === messageId).map((r) => r.admin_name)
+    const matches = reads.filter((r) => r.message_id === messageId)
+    // Dedupe by admin_id, in case of any legacy duplicate rows already in the DB
+    const uniqueByAdmin = Array.from(
+      new Map(matches.map((r) => [r.admin_id, r])).values()
+    )
+    return uniqueByAdmin.map((r) => r.admin_name).filter(Boolean) as string[]
   }
 
   return { markAsRead, getSeenBy }

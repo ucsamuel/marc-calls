@@ -300,7 +300,7 @@ console.log('Live call check on page load:', live, 'Error:', liveError)
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-500 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-3 w-3 bg-green-600"></span>
             </span>
-            <span className="text-sm font-medium text-green-800 dark:text-green-400">Call in progress — tap to join</span>
+            <span className="text-sm font-medium text-green-800 dark:text-green-400">Ongoing session — tap to join</span>
           </button>
         )}
 
