@@ -326,7 +326,7 @@ console.log('Live call check on page load:', live, 'Error:', liveError)
               <h2 className="text-sm font-medium text-[#0B1F3A] dark:text-white">Upcoming</h2>
               <div className="h-px bg-[#C9A227]/40 flex-1 ml-3" />
             </div>
-            <p className="text-xs text-[#5B6B82] dark:text-gray-400 mb-2">Swipe left on a call to copy its link</p>
+            <p className="text-xs text-[#5B6B82] dark:text-gray-400 mb-2"></p>
             <div className="space-y-2">
               {upcomingCalls.map((call) => (
                 <div key={call.id} className="relative overflow-hidden rounded-xl">
