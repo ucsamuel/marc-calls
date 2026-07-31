@@ -146,7 +146,7 @@ export default function JoinPageClient({ callId }: { callId: string }) {
           {!micDenied ? (
             <>
               <p className="text-sm text-[#5B6B82] dark:text-gray-400 mb-6">
-                MARC Calls needs microphone access so you can listen and speak during session.
+                MARC needs microphone access so you can listen and speak during session.
                 Tap "Allow" when your browser asks.
               </p>
               <button
