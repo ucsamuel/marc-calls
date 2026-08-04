@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { DailyCall } from '@daily-co/daily-js'
 
-const EMOJIS = ['👍', '❤️', '🙏', '😂']
+const EMOJIS = ['👍', '❤️', '🙏', '😂', '🔥', '👏']
 
 type FloatingEmoji = {
   id: number

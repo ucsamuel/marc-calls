@@ -133,7 +133,7 @@ export default function SignUpForm() {
               className="w-full h-12 px-4 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C9A227] text-[#0B1F3A] dark:text-white"
               placeholder="Enter your phone Number"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Used to identify you in the app — you'll log in with your email.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1"></p>
           </div>
 
           <div>
@@ -146,7 +146,7 @@ export default function SignUpForm() {
               className="w-full h-12 px-4 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C9A227] text-[#0B1F3A] dark:text-white"
               placeholder="you@example.com"
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Only used if you forget your password.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">For password reset</p>
           </div>
 
           <div>
