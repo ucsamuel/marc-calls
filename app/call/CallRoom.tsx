@@ -999,17 +999,17 @@ export default function CallRoom() {
     )
   }
 
-  const handleShare = async () => {
-    const joinLink = `${window.location.origin}/join/${callId}`
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'MARC.AG is live', text: 'Join the prayer call now', url: joinLink })
-      } catch (err) {}
-    } else if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(joinLink)
-      alert('Link copied to clipboard')
-    }
+        const handleShare = async () => {
+  const joinLink = `${window.location.origin}/join/${callId}`
+  if (navigator.share) {
+    try {
+      await navigator.share({ url: joinLink })
+    } catch (err) {}
+  } else if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(joinLink)
+    alert('Link copied to clipboard')
   }
+}
 
   const handleMuteParticipant = (sessionId: string, currentlyOn: boolean) => {
     callRef.current?.sendAppMessage({ type: 'force-mute', targetId: sessionId, mute: currentlyOn }, '*')
