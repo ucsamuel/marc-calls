@@ -789,15 +789,27 @@ export default function CallRoom() {
       })
       callRef.current = call
 
-      call.on('joined-meeting', () => {
-        hasJoinedOnce = true
-        setJoined(true)
-        call.setLocalAudio(false)
-        requestWakeLock()
+         call.on('joined-meeting', () => {
+  hasJoinedOnce = true
+  setJoined(true)
+  call.setLocalAudio(false)
+  requestWakeLock()
 
-        const localId = call.participants().local?.session_id
-        if (localId) setMySessionId(localId)
-      })
+  const localId = call.participants().local?.session_id
+  if (localId) setMySessionId(localId)
+
+  call.updateInputSettings({
+    audio: {
+      settings: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    },
+  }).catch(() => {
+    // Non-critical if unsupported on this device — call still works fine
+  })
+})
 
       // Daily's raw call object does not auto-play remote audio.
       // We must manually attach each incoming audio track to a real <audio> element.
@@ -1056,7 +1068,9 @@ export default function CallRoom() {
   }
 
   const handleEndCall = async () => {
+  if (joined) {
     callRef.current?.sendAppMessage({ type: 'call-ended' }, '*')
+  }
 
     const { data: callData } = await supabase
       .from('calls')
