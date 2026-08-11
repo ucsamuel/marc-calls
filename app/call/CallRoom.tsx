@@ -1410,7 +1410,7 @@ export default function CallRoom() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [isHost, setIsHost] = useState(false)
   const [isCoHost, setIsCoHost] = useState(false)
-  const [myMuted, setMyMuted] = useState(false)
+  const [myMuted, setMyMuted] = useState(true)
   const [hardMuted, setHardMuted] = useState(false)
   const [handRaised, setHandRaised] = useState(false)
   const [listenerCount, setListenerCount] = useState(0)
@@ -1514,12 +1514,10 @@ export default function CallRoom() {
       callRef.current = call
 
       call.on('joined-meeting', () => {
-        hasJoinedOnce = true
-        setJoined(true)
-        // Mic on by default for everyone
-        call.setLocalAudio(true)
-        setMyMuted(false)
-        requestWakeLock()
+       hasJoinedOnce = true
+      setJoined(true)
+      call.setLocalAudio(false)
+      requestWakeLock()
 
         const localId = call.participants().local?.session_id
         if (localId) setMySessionId(localId)
@@ -1784,6 +1782,7 @@ export default function CallRoom() {
   }
 
   const handleEndCall = async () => {
+  try {
     if (joined) {
       callRef.current?.sendAppMessage({ type: 'call-ended' }, '*')
     }
@@ -1792,13 +1791,20 @@ export default function CallRoom() {
       .from('calls')
       .select('id')
       .eq('daily_room_name', roomName)
-      .single()
+      .maybeSingle()
 
     if (callData) {
       await supabase
         .from('calls')
         .update({ status: 'ended', ended_at: new Date().toISOString(), peak_listeners: listenerCount })
         .eq('id', callData.id)
+    } else {
+      // Fallback: no exact match found, mark any stale 'live' row for this room ended anyway
+      await supabase
+        .from('calls')
+        .update({ status: 'ended', ended_at: new Date().toISOString(), peak_listeners: listenerCount })
+        .eq('daily_room_name', roomName)
+        .eq('status', 'live')
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500))
@@ -1808,11 +1814,15 @@ export default function CallRoom() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomName }),
     })
-
+  } catch (err) {
+    console.error('Error ending call cleanly:', err)
+  } finally {
+    // Always run, even if something above failed
     setCallEnded(true)
     callRef.current?.leave()
     router.push('/home')
   }
+}
 
   const handleLeave = () => {
     callRef.current?.leave()
