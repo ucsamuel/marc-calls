@@ -1394,6 +1394,7 @@ type ParticipantInfo = {
 }
 
 export default function CallRoom() {
+  
   const router = useRouter()
   const searchParams = useSearchParams()
   const roomName = searchParams.get('room')
@@ -1425,11 +1426,26 @@ export default function CallRoom() {
   const [blockedEntry, setBlockedEntry] = useState(false)
   const [disconnected, setDisconnected] = useState(false)
   const [callEnded, setCallEnded] = useState(false)
+  const [hasLeft, setHasLeft] = useState(false)
   const [mySessionId, setMySessionId] = useState('')
+   const leavingDeliberatelyRef = useRef(false)
+   
+   useEffect(() => {
+  speakerIdsRef.current = speakerIds
+}, [speakerIds])
 
-  useEffect(() => {
-    speakerIdsRef.current = speakerIds
-  }, [speakerIds])
+useEffect(() => {
+  const handleVisibilityChange = async () => {
+    if (document.visibilityState === 'visible' && joined) {
+      await requestWakeLock()
+    }
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  return () => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
+}, [joined])
 
   const playChime = () => {
     try {
@@ -1459,6 +1475,7 @@ export default function CallRoom() {
 
     let hasJoinedOnce = false
     let callEndedLocal = false
+    let leavingDeliberately = false
 
     const setup = async () => {
       const kickedKey = `kicked_${roomName}`
@@ -1581,8 +1598,8 @@ export default function CallRoom() {
         }
       })
 
-      call.on('left-meeting', () => {
-        if (hasJoinedOnce && !callEndedLocal) setDisconnected(true)
+        call.on('left-meeting', () => {
+          if (hasJoinedOnce && !callEndedLocal && !leavingDeliberatelyRef.current) setDisconnected(true)
       })
 
       call.on('error', () => {
@@ -1824,10 +1841,17 @@ export default function CallRoom() {
   }
 }
 
-  const handleLeave = () => {
-    callRef.current?.leave()
-    router.push(isAdmin ? '/home' : '/')
+       
+
+ const handleLeave = () => {
+  leavingDeliberatelyRef.current = true
+  callRef.current?.leave()
+  if (isAdmin) {
+    router.push('/home')
+  } else {
+    setHasLeft(true)
   }
+}
 
   const handleReconnect = () => {
     window.location.reload()
@@ -1871,6 +1895,15 @@ export default function CallRoom() {
     )
   }
 
+
+  if (hasLeft) {
+  return (
+    <div className="min-h-screen bg-[#0B1F3A] flex items-center justify-center px-6 text-center">
+      <p className="text-white text-sm">You've left the call.</p>
+    </div>
+  )
+}
+
   const canManage = isHost || isCoHost
   const speakers = participants.filter((p) => speakerIds.has(p.session_id))
 
@@ -1885,7 +1918,7 @@ export default function CallRoom() {
   return (
     <div className="min-h-screen bg-[#0B1F3A] flex flex-col">
       <div className="flex items-center justify-between px-5 pt-6 pb-4 flex-shrink-0">
-        <p className="text-white/60 text-sm">Prayer call</p>
+        <p className="text-white/60 text-sm">MARANATHA</p>
         <button onClick={() => setShowListeners(true)} className="flex items-center gap-1.5 text-white text-sm">
           <Users size={16} />
           <span>{listenerCount} listening</span>
@@ -2080,3 +2113,6 @@ export default function CallRoom() {
     </div>
   )
 }
+
+
+
